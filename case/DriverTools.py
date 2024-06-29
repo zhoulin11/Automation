@@ -64,8 +64,4 @@ class Test_project:
         time.sleep(3)
         driver.quit()
 
-    # def test_004(self):
-    #     login_page = BasePage.LoginPage(self.driver)
-
-
 
