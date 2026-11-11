@@ -1,33 +1,48 @@
-# This sample code uses the Appium python client v2
-# pip install Appium-Python-Client
-# Then you can paste this into a file and simply run with Python
+"""QQ邮箱登录页页面对象"""
+from selenium.webdriver.common.by import By
 
-from appium import webdriver
-from appium.webdriver.common.appiumby import AppiumBy
+from base.BasePage import BasePage
 
-# For W3C actions
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.actions import interaction
-from selenium.webdriver.common.actions.action_builder import ActionBuilder
-from selenium.webdriver.common.actions.pointer_input import PointerInput
 
-caps = {}
-caps["platformName"] = "Android"
-caps["appium:deviceName"] = "deviceName"
-caps["appium:appPackage"] = "com.tencent.mobileqq"
-caps["appium:appActivity"] = "com.tencent.mobileqq.activity.SplashActivity"
-caps["appium:ensureWebviewsHavePages"] = True
-caps["appium:nativeWebScreenshot"] = True
-caps["appium:newCommandTimeout"] = 3600
-caps["appium:connectHardwareKeyboard"] = True
+class LoginPage(BasePage):
+    """QQ邮箱登录页，登录表单位于页面 iframe 内"""
 
-driver = webdriver.Remote("http://127.0.0.1:4723/wd/hub", caps)
+    URL = "https://mail.qq.com/"
 
-el1 = driver.find_element(by=AppiumBy.ACCESSIBILITY_ID, value="同意")
-el1.click()
-el2 = driver.find_element(by=AppiumBy.ID, value="com.tencent.mobileqq:id/btn_login")
-el2.click()
-el3 = driver.find_element(by=AppiumBy.ID, value="com.tencent.mobileqq:id/t3i")
-el3.click()
+    # 页面元素定位器
+    PASSWORD_LOGIN_LINK = (By.ID, "switcher_plogin")
+    ACCOUNT_INPUT = (By.ID, "u")
+    PASSWORD_INPUT = (By.ID, "p")
+    LOGIN_BUTTON = (By.ID, "login_button")
 
-driver.quit()
+    def open(self):
+        """打开QQ邮箱首页"""
+        self.open_url(self.URL)
+
+    def switch_to_password_login(self):
+        """切换为账号密码登录方式"""
+        self.click_element(self.find_in_frames(self.PASSWORD_LOGIN_LINK, timeout=20))
+
+    def input_account(self, account):
+        """输入账号"""
+        self.input_element(self.find_in_frames(self.ACCOUNT_INPUT), account)
+
+    def input_password(self, password):
+        """输入密码"""
+        self.input_element(self.find_in_frames(self.PASSWORD_INPUT), password)
+
+    def click_login(self):
+        """点击登录按钮"""
+        self.click_element(self.find_in_frames(self.LOGIN_BUTTON))
+
+    def login(self, account, password):
+        """执行完整登录流程"""
+        self.open()
+        self.switch_to_password_login()
+        self.input_account(account)
+        self.input_password(password)
+        self.click_login()
+
+    def wait_login_success(self, timeout=300):
+        """等待进入邮箱，登录页标题包含“登录”，登录成功后标题会变化"""
+        return self.wait_title_not_contains("登录", timeout)

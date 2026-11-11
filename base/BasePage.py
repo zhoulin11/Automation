@@ -1,169 +1,148 @@
-import os
+"""Selenium 基础操作封装：页面操作、元素查找、元素操作、iframe 处理"""
 import time
+
 from selenium import webdriver
+from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.action_chains import ActionChains
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.select import Select
+
+
 class BasePage:
-    """Selenium 基础操作封装类"""
-    # 默认超时时间（秒）
+    """所有页面对象的父类，提供统一的元素操作能力"""
+
+    # 默认显式等待超时时间（秒）
     DEFAULT_TIMEOUT = 10
     # 默认轮询间隔（秒）
-    DEFAULT_POLL_FREQUENCY = 0.5
+    POLL_FREQUENCY = 0.5
+
     def __init__(self, driver: webdriver.Chrome):
-        """
-        初始化 BasePage
-        :param driver: WebDriver 实例
-        """
         self.driver = driver
-        self.wait = WebDriverWait(self.driver, self.DEFAULT_TIMEOUT, self.DEFAULT_POLL_FREQUENCY)
-    # ==================== 元素定位 ====================
+        self.wait = WebDriverWait(driver, self.DEFAULT_TIMEOUT, self.POLL_FREQUENCY)
+
+    # ==================== 页面操作 ====================
+    def open_url(self, url):
+        """打开指定页面"""
+        self.driver.get(url)
+
+    def maximize_window(self):
+        """最大化浏览器窗口"""
+        self.driver.maximize_window()
+
+    def get_title(self):
+        """获取当前页面标题"""
+        return self.driver.title
+
+    def get_current_url(self):
+        """获取当前页面地址"""
+        return self.driver.current_url
+
+    def wait_title_not_contains(self, text, timeout=60):
+        """等待标题不再包含指定文本，用于判断页面跳转完成"""
+        try:
+            WebDriverWait(self.driver, timeout, self.POLL_FREQUENCY).until(
+                lambda d: text not in d.title
+            )
+            return True
+        except TimeoutException:
+            return False
+
+    # ==================== 元素查找 ====================
     def find_element(self, locator: tuple):
-        """
-        查找单个元素（带显式等待）
-        :param locator: 定位器，格式为 (By.ID, 'value') 等
-        :return: WebElement
-        """
+        """查找单个元素（只要存在于 DOM 中）"""
         return self.wait.until(EC.presence_of_element_located(locator))
+
     def find_elements(self, locator: tuple):
-        """
-        查找多个元素（带显式等待）
-        :param locator: 定位器
-        :return: WebElement 列表
-        """
+        """查找多个元素"""
         return self.wait.until(EC.presence_of_all_elements_located(locator))
-    def find_clickable_element(self, locator: tuple):
-        """
-        查找可点击的元素
-        :param locator: 定位器
-        :return: WebElement
-        """
-        return self.wait.until(EC.element_to_be_clickable(locator))
+
     def find_visible_element(self, locator: tuple):
-        """
-        查找可见的元素
-        :param locator: 定位器
-        :return: WebElement
-        """
+        """查找可见的元素"""
         return self.wait.until(EC.visibility_of_element_located(locator))
+
+    def find_clickable_element(self, locator: tuple):
+        """查找可点击的元素"""
+        return self.wait.until(EC.element_to_be_clickable(locator))
+
+    def find_in_frames(self, locator: tuple, timeout=None):
+        """在主页面及所有 iframe（含嵌套）中查找可见元素，找到后 driver 停留在该 iframe 内"""
+        end_time = time.time() + (timeout or self.DEFAULT_TIMEOUT)
+        while time.time() < end_time:
+            self.switch_to_default_content()
+            element = self._search_frames(locator)
+            if element is not None:
+                return element
+            time.sleep(self.POLL_FREQUENCY)
+        raise TimeoutException(f"在页面及 iframe 中均未找到元素：{locator}")
+
+    def _search_frames(self, locator: tuple):
+        """在当前页面递归查找元素，找不到时进入下一层 iframe 继续找"""
+        for element in self.driver.find_elements(*locator):
+            if element.is_displayed():
+                return element
+        for frame in self.driver.find_elements(By.TAG_NAME, "iframe"):
+            try:
+                self.driver.switch_to.frame(frame)
+            except Exception:
+                continue
+            element = self._search_frames(locator)
+            if element is not None:
+                return element
+            self.driver.switch_to.parent_frame()
+        return None
+
     # ==================== 元素操作 ====================
     def click(self, locator: tuple):
-        """
-        点击元素
-        :param locator: 定位器
-        """
+        """点击元素"""
         self.find_clickable_element(locator).click()
-    def input_text(self, locator: tuple, text: str, clear_first: bool = True):
-        """
-        输入文本
-        :param locator: 定位器
-        :param text: 要输入的文本
-        :param clear_first: 是否先清空输入框
-        """
-        element = self.find_element(locator)
+
+    def click_element(self, element):
+        """点击已定位的元素，被遮挡时用 JS 点击兜底"""
+        try:
+            element.click()
+        except Exception:
+            self.driver.execute_script("arguments[0].click();", element)
+
+    def input_text(self, locator: tuple, text: str, clear_first=True):
+        """在输入框中输入文本"""
+        self.input_element(self.find_visible_element(locator), text, clear_first)
+
+    def input_element(self, element, text, clear_first=True):
+        """向已定位的输入元素输入文本"""
         if clear_first:
             element.clear()
         element.send_keys(text)
-    def input_and_enter(self, locator: tuple, text: str):
-        """
-        输入文本并回车
-        :param locator: 定位器
-        :param text: 要输入的文本
-        """
-        element = self.find_element(locator)
-        element.clear()
-        element.send_keys(text)
-        element.send_keys(Keys.ENTER)
-    def clear_input(self, locator: tuple):
-        """
-        清空输入框
-        :param locator: 定位器
-        """
-        self.find_element(locator).clear()
-    def get_text(self, locator: tuple) -> str:
-        """
-        获取元素文本
-        :param locator: 定位器
-        :return: 元素文本内容
-        """
-        return self.find_element(locator).text
-    def get_attribute(self, locator: tuple, attribute: str) -> str:
-        """
-        获取元素属性值
-        :param locator: 定位器
-        :param attribute: 属性名
-        :return: 属性值
-        """
+
+    def get_text(self, locator: tuple):
+        """获取元素文本"""
+        return self.find_visible_element(locator).text
+
+    def get_attribute(self, locator: tuple, attribute: str):
+        """获取元素属性值"""
         return self.find_element(locator).get_attribute(attribute)
-    def get_value(self, locator: tuple) -> str:
-        """
-        获取输入框的值
-        :param locator: 定位器
-        :return: value 属性值
-        """
-        return self.get_attribute(locator, "value")
-    # ==================== 元素状态判断 ====================
-    def is_element_present(self, locator: tuple, timeout: int = 5) -> bool:
-        """
-        判断元素是否存在
-        :param locator: 定位器
-        :param timeout: 超时时间
-        :return: True/False
-        """
+
+    # ==================== 状态判断 ====================
+    def is_element_present(self, locator: tuple, timeout=5):
+        """判断元素是否存在"""
         try:
-            WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(self.driver, timeout, self.POLL_FREQUENCY).until(
                 EC.presence_of_element_located(locator)
             )
             return True
-        except Exception:
+        except TimeoutException:
             return False
-    def is_element_visible(self, locator: tuple, timeout: int = 5) -> bool:
-        """
-        判断元素是否可见
-        :param locator: 定位器
-        :param timeout: 超时时间
-        :return: True/False
-        """
+
+    def is_element_visible(self, locator: tuple, timeout=5):
+        """判断元素是否可见"""
         try:
-            WebDriverWait(self.driver, timeout).until(
+            WebDriverWait(self.driver, timeout, self.POLL_FREQUENCY).until(
                 EC.visibility_of_element_located(locator)
             )
             return True
-        except Exception:
+        except TimeoutException:
             return False
-    def is_element_clickable(self, locator: tuple, timeout: int = 5) -> bool:
-        """
-        判断元素是否可点击
-        :param locator: 定位器
-        :param timeout: 超时时间
-        :return: True/False
-        """
-        try:
-            WebDriverWait(self.driver, timeout).until(
-                EC.element_to_be_clickable(locator)
-            )
-            return True
-        except Exception:
-            return False
-    def is_element_selected(self, locator: tuple) -> bool:
-        """
-        判断元素是否被选中
-        :param locator: 定位器
-        :return: True/False
-        """
-        return self.find_element(locator).is_selected()
-    # ==================== 下拉框操作 ====================
-    def select_by_value(self, locator: tuple, value: str):
-        """
-        通过 value 选择下拉选项
-        :param locator: 定位器
-        :param value: 选项的 value 值
-        """
-        Select(self.find_element(locator)).select_by_value(value)
-    def select_by_visible_text(self, locator: tuple, text: str):
-        """
-        通过可见文本选择下拉选项
-        :param locator: 定位器
+
+    # ==================== frame 切换 ====================
+    def switch_to_default_content(self):
+        """回到主文档"""
+        self.driver.switch_to.default_content()
