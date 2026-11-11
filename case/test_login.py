@@ -4,6 +4,7 @@ import os
 import sys
 import time
 
+import allure
 from selenium import webdriver
 
 # 保证以脚本方式运行时能导入项目根目录下的 base、page 包
@@ -21,18 +22,24 @@ def get_password():
     )
 
 
+@allure.feature("QQ邮箱")
+@allure.story("账号密码登录")
+@allure.title("使用QQ账号 {0} 登录QQ邮箱".format(ACCOUNT))
 def test_login():
     """打开QQ邮箱，使用账号密码登录并校验登录结果"""
     password = get_password()
     driver = webdriver.Chrome()
     try:
         login_page = LoginPage(driver)
-        login_page.maximize_window()
-        login_page.login(ACCOUNT, password)
-
-        print("已提交登录，如出现验证码或滑块请手动完成，脚本会自动等待")
-        assert login_page.wait_login_success(timeout=300), "登录失败：请检查账号密码或验证码是否完成"
-        print(f"登录成功，当前页面标题：{login_page.get_title()}")
+        with allure.step("打开QQ邮箱并最大化窗口"):
+            login_page.maximize_window()
+        with allure.step(f"输入账号 {ACCOUNT} 和密码并提交登录"):
+            login_page.login(ACCOUNT, password)
+        with allure.step("校验登录结果"):
+            assert login_page.wait_login_success(timeout=300), "登录失败：请检查账号密码或验证码是否完成"
+            title = login_page.get_title()
+            allure.attach(title, name="登录后页面标题", attachment_type=allure.attachment_type.TEXT)
+            print(f"登录成功，当前页面标题：{title}")
         time.sleep(5)
     finally:
         driver.quit()
