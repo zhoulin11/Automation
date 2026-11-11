@@ -1,3 +1,4 @@
+# 浏览器操作封装，供 case 目录下的脚本调用
 import time
 
 from selenium import webdriver
